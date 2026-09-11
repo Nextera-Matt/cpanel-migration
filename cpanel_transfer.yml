@@ -1,0 +1,49 @@
+---
+- name: Automate cPanel Account Transfer using pkgacct and restorepkg
+  hosts: localhost
+  gather_facts: no
+  vars:
+    source_vm: "{{ source_vm }}"
+    target_vm: "{{ target_vm }}"
+    cpanel_account: "{{ cpanel_account }}"
+    backup_dir: "/home/backup"
+    backup_file: "{{ cpanel_account }}.tar.gz"
+    target_ssh_port: "{{ target_ssh_port }}"
+
+  tasks:
+    - name: Backup cPanel Account on Source Server
+      shell: "/scripts/pkgacct {{ cpanel_account }} --dest {{ backup_dir }}"
+      become: yes
+      become_method: sudo
+      become_user: root
+      remote_user: root
+      delegate_to: "{{ source_vm }}"
+      register: backup_result
+
+    - name: Check if Backup was Successful
+      debug:
+        msg: "Backup created successfully"
+      when: backup_result.rc == 0
+
+    - name: Transfer Backup File to Target Server
+      shell: "scp -P {{ target_ssh_port }} {{ backup_dir }}/{{ backup_file }} root@{{ target_vm }}:/home/{{ cpanel_account }}/"
+      become: no
+      delegate_to: localhost
+      when: backup_result.rc == 0
+
+    - name: Restore cPanel Account on Target Server
+      shell: "/scripts/restorepkg /home/{{ cpanel_account }}/{{ backup_file }}"
+      become: yes
+      become_method: sudo
+      become_user: root
+      remote_user: root
+      delegate_to: "{{ target_vm }}"
+      when: backup_result.rc == 0
+
+    - name: Clean up backup file on Target Server
+      shell: "rm -f /home/{{ cpanel_account }}/{{ backup_file }}"
+      become: yes
+      become_user: root
+      remote_user: root
+      delegate_to: "{{ target_vm }}"
+      when: backup_result.rc == 0
